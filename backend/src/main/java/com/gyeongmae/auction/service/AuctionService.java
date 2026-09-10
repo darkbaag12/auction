@@ -559,7 +559,9 @@ public class AuctionService {
         int premiumCap = request.getPremiumCap() != null && request.getPremiumCap() > 0
                 ? request.getPremiumCap()
                 : tournament.getPremiumCap();
-        int premiumFloor = isReAuction ? reAuctionFloor(player) : 0;
+        int premiumFloor = isReAuction
+                ? reAuctionFloor(player, teamRepository.findByTournamentIdOrderByIdAsc(tournamentId))
+                : 0;
 
         AuctionRound round = AuctionRound.builder()
                 .tournament(tournament)
@@ -585,25 +587,24 @@ public class AuctionService {
     /**
      * 유찰 재경매의 프리미엄가 하한 (룰북 4-3의 "최종가를 0으로 만드는" 하한).
      *
-     * <p><b>주 라인의 최종가가 0이 되는 값</b>을 하한으로 잡는다. 즉 -(주 라인 기준 점수).
-     * 다른 라인은 주 라인과의 차액에서 시작한다.
-     * 예) 주 10점 / 부 11점 → 하한 -10, 주 라인 0점부터, 부 라인은 1점부터 경매.
-     *
-     * <p>주 라인이 부 라인보다 비싸면 차액이 음수가 되는데,
-     * 최종가는 {@link #finalPrice}에서 0 아래로 내려가지 않게 잘린다.
-     *
-     * <p>주 포지션이 비어 있는 매물은 신청 라인 중 가장 싼 쪽을 기준으로 삼는다.
+     * <p>매물이 <b>실제로 들어갈 수 있는 라인</b> 중 가장 싼 쪽의 최종가가 0이 되도록 잡는다.
+     * <ul>
+     *   <li>주/부 라인에 빈 자리가 있으면 그중 싼 쪽 → -min(주, 부)</li>
+     *   <li>주/부 둘 다 못 가면 남은 빈 라인 중 싼 쪽</li>
+     * </ul>
+     * 입찰 자격 판정({@link #eligibleLinesByTeam})과 같은 기준을 쓰므로,
+     * 실제로 살 수 없는 라인 때문에 하한이 엉뚱하게 잡히지 않는다.
+     * 가장 싼 라인을 기준으로 하기 때문에 어떤 라인도 최종가가 음수가 되지 않는다.
      */
-    private int reAuctionFloor(Player player) {
-        String mainLine = player.getMainPosition();
-        if (mainLine != null && LINES.contains(mainLine)) {
-            return -player.getScoreFor(mainLine);
-        }
+    private int reAuctionFloor(Player player, List<Team> teams) {
+        Set<String> lines = eligibleLinesByTeam(player, teams).values().stream()
+                .flatMap(List::stream)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
 
-        List<Integer> candidates = new ArrayList<>();
-        for (String line : declaredLines(player)) candidates.add(player.getScoreFor(line));
-        if (candidates.isEmpty()) return 0;
-        return -Collections.min(candidates);
+        // 빈 라인이 있는 팀이 하나도 없으면 살 수 있는 곳이 없다 → 주/부 기준으로만 잡아둔다
+        if (lines.isEmpty()) lines = new LinkedHashSet<>(declaredLines(player));
+
+        return -lines.stream().mapToInt(player::getScoreFor).min().orElse(0);
     }
 
     /** 매물이 신청한 주/부 포지션. 둘 다 없으면 5라인 전체로 본다. */
@@ -623,9 +624,8 @@ public class AuctionService {
      * 룰북 4-3: 팀장은 매물의 주/부 포지션 중 자기 팀에 빈 라인이 하나 이상 있을 때만 입찰할 수 있다.
      * 조건을 만족하는 팀이 하나도 없으면 그 매물에 한해 조건을 적용하지 않는다.
      */
-    private Map<Long, List<String>> eligibleLinesByTeam(AuctionRound round) {
-        List<Team> teams = teamRepository.findByTournamentIdOrderByIdAsc(round.getTournament().getId());
-        List<String> declared = declaredLines(round.getPlayer());
+    private Map<Long, List<String>> eligibleLinesByTeam(Player player, List<Team> teams) {
+        List<String> declared = declaredLines(player);
 
         Map<Long, List<String>> strict = new LinkedHashMap<>();
         for (Team team : teams) {
@@ -683,7 +683,8 @@ public class AuctionService {
             throw new IllegalArgumentException("프리미엄가 상한(+" + cap + ")을 초과할 수 없습니다.");
         }
 
-        Map<Long, List<String>> eligible = eligibleLinesByTeam(round);
+        Map<Long, List<String>> eligible = eligibleLinesByTeam(
+                player, teamRepository.findByTournamentIdOrderByIdAsc(round.getTournament().getId()));
         List<String> allowedLines = eligible.get(team.getId());
         if (allowedLines == null || allowedLines.isEmpty()) {
             throw new IllegalArgumentException("이 매물의 주/부 라인 중 팀에 빈 라인이 없어 입찰할 수 없습니다.");
