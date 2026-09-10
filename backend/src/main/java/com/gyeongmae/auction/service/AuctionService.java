@@ -583,10 +583,23 @@ public class AuctionService {
     }
 
     /**
-     * 룰북 4-3: "유찰 재경매의 경우 매입 가능한 가격 중 최종가를 0으로 만드는 최댓값을 하한으로 한다."
-     * 주/부 라인 기준가 중 가장 싼 쪽이 0원이 되는 값 = -min(기준가).
+     * 유찰 재경매의 프리미엄가 하한 (룰북 4-3의 "최종가를 0으로 만드는" 하한).
+     *
+     * <p><b>주 라인의 최종가가 0이 되는 값</b>을 하한으로 잡는다. 즉 -(주 라인 기준 점수).
+     * 다른 라인은 주 라인과의 차액에서 시작한다.
+     * 예) 주 10점 / 부 11점 → 하한 -10, 주 라인 0점부터, 부 라인은 1점부터 경매.
+     *
+     * <p>주 라인이 부 라인보다 비싸면 차액이 음수가 되는데,
+     * 최종가는 {@link #finalPrice}에서 0 아래로 내려가지 않게 잘린다.
+     *
+     * <p>주 포지션이 비어 있는 매물은 신청 라인 중 가장 싼 쪽을 기준으로 삼는다.
      */
     private int reAuctionFloor(Player player) {
+        String mainLine = player.getMainPosition();
+        if (mainLine != null && LINES.contains(mainLine)) {
+            return -player.getScoreFor(mainLine);
+        }
+
         List<Integer> candidates = new ArrayList<>();
         for (String line : declaredLines(player)) candidates.add(player.getScoreFor(line));
         if (candidates.isEmpty()) return 0;
