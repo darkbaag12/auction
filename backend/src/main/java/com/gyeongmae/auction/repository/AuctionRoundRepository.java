@@ -12,6 +12,7 @@ import java.util.Optional;
 public interface AuctionRoundRepository extends JpaRepository<AuctionRound, Long> {
     List<AuctionRound> findByTournamentIdOrderByRoundNumberAsc(Long tournamentId);
     Optional<AuctionRound> findByTournamentIdAndStatus(Long tournamentId, AuctionRoundStatus status);
+    List<AuctionRound> findByTournamentIdAndStatusIn(Long tournamentId, List<AuctionRoundStatus> statuses);
     int countByTournamentId(Long tournamentId);
     List<AuctionRound> findByWinningTeamId(Long teamId);
 }

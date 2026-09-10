@@ -20,8 +20,12 @@ public class AuctionWebSocketController {
         try {
             auctionService.placeBid(request);
         } catch (Exception e) {
-            log.error("Bid error: {}", e.getMessage());
-            // Error is broadcast via the service layer or handled client-side
+            log.warn("입찰 거절 (round={}, team={}): {}", request.getRoundId(), request.getTeamId(), e.getMessage());
+            try {
+                auctionService.broadcastBidRejected(request.getRoundId(), request.getTeamId(), e.getMessage());
+            } catch (Exception ignored) {
+                log.error("입찰 거절 사유 전송 실패", ignored);
+            }
         }
     }
 
