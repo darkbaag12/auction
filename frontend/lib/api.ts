@@ -26,7 +26,7 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
 
 export const api = {
   // Tournament
-  createTournament: (data: { name: string; totalPoints: number; bidUnit: number; maxTeamSize: number }) =>
+  createTournament: (data: { name: string; totalPoints: number; bidUnit: number; maxTeamSize: number; premiumCap?: number }) =>
     request('/tournaments', { method: 'POST', body: JSON.stringify(data) }),
 
   getTournaments: () =>
@@ -47,8 +47,14 @@ export const api = {
   setAccessCode: (id: number, code: string) =>
     request(`/tournaments/${id}/access-code`, { method: 'PUT', body: JSON.stringify({ code }) }),
   // Team
-  createTeam: (tournamentId: number, data: { name: string; captainName: string; startingPoints?: number }) =>
+  createTeam: (tournamentId: number, data: { name: string; captainName: string; captainPosition?: string; startingPoints?: number }) =>
     request(`/tournaments/${tournamentId}/teams`, { method: 'POST', body: JSON.stringify(data) }),
+
+  updateTeam: (
+    tournamentId: number,
+    teamId: number,
+    data: { name?: string; captainName?: string; captainPosition?: string; remainingPoints?: number },
+  ) => request(`/tournaments/${tournamentId}/teams/${teamId}`, { method: 'PUT', body: JSON.stringify(data) }),
 
   getTeams: (tournamentId: number) =>
     request(`/tournaments/${tournamentId}/teams`),
@@ -61,7 +67,10 @@ export const api = {
   createPlayer: (tournamentId: number, data: unknown) =>
     request(`/tournaments/${tournamentId}/players`, { method: 'POST', body: JSON.stringify(data) }),
 
-  manualAssignPlayer: (tournamentId: number, data: { playerId: number, teamId: number, amount: number }) =>
+  manualAssignPlayer: (
+    tournamentId: number,
+    data: { playerId: number; teamId: number; position?: string; premium?: number; amount?: number },
+  ) =>
     request(`/tournaments/${tournamentId}/players/manual-assign`, { method: 'POST', body: JSON.stringify(data) }),
 
   createPlayersBulk: (tournamentId: number, data: unknown[]) =>
@@ -90,8 +99,12 @@ export const api = {
     request(`/tournaments/${tournamentId}/players`),
 
   // Auction
-  startAuction: (tournamentId: number, data: { playerId: number; startingPrice: number }) =>
+  startAuction: (tournamentId: number, data: { playerId: number; premiumCap?: number }) =>
     request(`/tournaments/${tournamentId}/auction/start`, { method: 'POST', body: JSON.stringify(data) }),
+
+  /** 낙찰팀 팀장이 라인을 선언한다 (룰북 4-3) */
+  assignLine: (roundId: number, teamId: number, position: string) =>
+    request('/auction/assign', { method: 'POST', body: JSON.stringify({ roundId, teamId, position }) }),
 
   closeAuction: (roundId: number, winningTeamId?: number) =>
     request('/auction/close', { method: 'POST', body: JSON.stringify({ roundId, winningTeamId }) }),

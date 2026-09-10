@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { api } from '../../lib/api';
 import { useWebSocket } from '../../hooks/useWebSocket';
-import { Tournament, TeamResponse, PlayerResponse, AuctionRound, BidResponse, POSITION_LABELS, TIER_COLORS } from '../../lib/types';
+import { Tournament, TeamResponse, PlayerResponse, AuctionRound, BidResponse, LINES, POSITION_LABELS, TIER_COLORS } from '../../lib/types';
 import { Suspense } from 'react';
 
 function DashboardContent() {
@@ -65,11 +65,15 @@ function DashboardContent() {
         setActiveRound(data);
         setBidHistory([]);
         break;
+      case 'ROUND_UPDATE':
+      case 'ROUND_PENDING_ASSIGN':
+        setActiveRound(data);
+        break;
       case 'NEW_BID':
         setBidHistory((prev) => [data, ...prev]);
         setActiveRound((prev) => prev ? {
           ...prev,
-          currentPrice: data.amount,
+          currentPremium: data.amount,
           highestBidderTeam: data.teamName
         } : null);
         break;
@@ -93,8 +97,8 @@ function DashboardContent() {
     );
   }
 
-  const soldPlayers = players.filter(p => p.status === 'SOLD');
-  const availablePlayers = players.filter(p => p.status === 'AVAILABLE' || p.status === 'UNSOLD');
+  const soldPlayers = players.filter(p => p.status === 'SOLD' && !p.isCaptain);
+  const availablePlayers = players.filter(p => !p.isCaptain && (p.status === 'AVAILABLE' || p.status === 'UNSOLD'));
 
   return (
     <div className="container">
@@ -150,11 +154,30 @@ function DashboardContent() {
             </p>
           )}
 
-          <div className="auction-price-label">현재 가격</div>
-          <div className="auction-price flash">{activeRound.currentPrice}P</div>
-          {activeRound.highestBidderTeam && (
+          <div style={{ display: 'flex', justifyContent: 'center', gap: '32px', flexWrap: 'wrap' }}>
+            {[
+              { label: '주 라인', line: activeRound.player.mainPosition, price: activeRound.mainLinePrice, accent: 'var(--gold)' },
+              { label: '부 라인', line: activeRound.player.subPosition, price: activeRound.subLinePrice, accent: 'var(--accent-light)' },
+            ].filter(s => s.line && s.price != null).map(slot => (
+              <div key={slot.label}>
+                <div className="auction-price-label">
+                  {slot.label} · {POSITION_LABELS[slot.line!] || slot.line}
+                </div>
+                <div className="auction-price flash" style={{ color: slot.accent }}>{slot.price}P</div>
+                <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                  기준 {activeRound.player.lineScores?.[slot.line!] ?? 0} + 프리미엄 {activeRound.currentPremium}
+                </div>
+              </div>
+            ))}
+          </div>
+          {activeRound.status === 'PENDING_ASSIGN' ? (
+            <p style={{ color: 'var(--gold)', marginTop: '12px', fontSize: '1.1rem' }}>
+              🏆 <strong>{activeRound.winningTeamName}</strong> 낙찰 — 라인 선언 대기 중
+            </p>
+          ) : activeRound.highestBidderTeam && (
             <p style={{ color: 'var(--text-secondary)', marginTop: '12px', fontSize: '1.1rem' }}>
               최고 입찰: <strong style={{ color: 'var(--accent-light)', fontSize: '1.2rem' }}>{activeRound.highestBidderTeam}</strong>
+              {' '}(프리미엄 {activeRound.currentPremium >= 0 ? `+${activeRound.currentPremium}` : activeRound.currentPremium})
             </p>
           )}
 
@@ -165,7 +188,7 @@ function DashboardContent() {
                 {bidHistory.slice(0, 5).map((bid, i) => (
                   <div key={bid.bidId || i} className="bid-item">
                     <span className="bid-team">{i === 0 && '👑 '}{bid.teamName}</span>
-                    <span className="bid-amount">{bid.amount}P</span>
+                    <span className="bid-amount">프리미엄 {bid.amount >= 0 ? `+${bid.amount}` : bid.amount}</span>
                   </div>
                 ))}
               </div>
@@ -177,7 +200,7 @@ function DashboardContent() {
       {/* Teams Grid */}
       <div className="grid-4" style={{ marginBottom: '32px' }}>
         {teams.map((team) => {
-          const positions = ['TOP', 'JUNGLE', 'MID', 'ADC', 'SUPPORT'];
+          const positions = [...LINES];
           return (
             <div key={team.id} className="card team-panel">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
@@ -193,6 +216,16 @@ function DashboardContent() {
               <div className="team-roster">
                 {positions.map((pos) => {
                   const member = team.members.find(m => m.assignedPosition === pos);
+                  if (!member && team.captainPosition === pos) {
+                    return (
+                      <div key={pos} className="roster-slot" style={{ background: 'rgba(200,155,60,0.08)' }}>
+                        <span className="position-icon">{POSITION_LABELS[pos]}</span>
+                        <span className="player-name">{team.captainName}</span>
+                        <span className="badge badge-tier" style={{ color: 'var(--gold)', fontSize: '0.6rem', padding: '2px 6px' }}>팀장</span>
+                        <span className="player-price">{team.captainScore}P</span>
+                      </div>
+                    );
+                  }
                   return member ? (
                     <div key={pos} className="roster-slot">
                       <span className="position-icon">{POSITION_LABELS[pos]}</span>

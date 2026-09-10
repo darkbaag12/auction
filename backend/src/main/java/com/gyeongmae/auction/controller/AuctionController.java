@@ -74,6 +74,14 @@ public class AuctionController {
         return ResponseEntity.ok(auctionService.getTeams(tournamentId));
     }
 
+    @PutMapping("/tournaments/{tournamentId}/teams/{teamId}")
+    public ResponseEntity<TeamDto.Response> updateTeam(
+            @PathVariable Long tournamentId,
+            @PathVariable Long teamId,
+            @RequestBody TeamDto.UpdateRequest request) {
+        return ResponseEntity.ok(auctionService.updateTeam(tournamentId, teamId, request));
+    }
+
     @DeleteMapping("/tournaments/{tournamentId}/teams/{teamId}")
     public ResponseEntity<Void> deleteTeam(@PathVariable Long tournamentId, @PathVariable Long teamId) {
         auctionService.deleteTeam(tournamentId, teamId);
@@ -126,6 +134,12 @@ public class AuctionController {
     @PostMapping("/auction/close")
     public ResponseEntity<AuctionDto.RoundResponse> closeAuction(@RequestBody AuctionDto.CloseRequest request) {
         return ResponseEntity.ok(auctionService.closeAuctionRound(request));
+    }
+
+    /** 낙찰팀 팀장이 라인을 선언한다 (룰북 4-3). */
+    @PostMapping("/auction/assign")
+    public ResponseEntity<AuctionDto.RoundResponse> assignLine(@RequestBody AuctionDto.AssignRequest request) {
+        return ResponseEntity.ok(auctionService.assignLine(request));
     }
 
     @PostMapping("/auction/pass")

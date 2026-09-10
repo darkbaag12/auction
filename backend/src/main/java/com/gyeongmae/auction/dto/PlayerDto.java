@@ -1,6 +1,7 @@
 package com.gyeongmae.auction.dto;
 
 import lombok.*;
+import java.util.Map;
 
 public class PlayerDto {
 
@@ -18,6 +19,8 @@ public class PlayerDto {
         private String profileIconUrl;
         private String resolution;
         private Integer startingScore;
+        /** 라인별 기준 점수. key: TOP/JUNGLE/MID/ADC/SUPPORT */
+        private Map<String, Integer> lineScores;
     }
 
     @Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
@@ -32,12 +35,20 @@ public class PlayerDto {
         private String subPosition;
         private String mostChampions;
         private Boolean isNewMember;
+        private Boolean isCaptain;
         private String status;
         private Long teamId;
         private String teamName;
         private Integer soldPrice;
+        private String assignedPosition;
         private String profileIconUrl;
         private String resolution;
         private Integer startingScore;
+        /** 라인별 기준 점수. key: TOP/JUNGLE/MID/ADC/SUPPORT */
+        private Map<String, Integer> lineScores;
+        /** 주 라인 기준 점수 */
+        private Integer mainScore;
+        /** 부 라인 기준 점수 */
+        private Integer subScore;
     }
 }

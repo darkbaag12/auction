@@ -11,6 +11,7 @@ public class TournamentDto {
         private int totalPoints;
         private int bidUnit;
         private int maxTeamSize;
+        private Integer premiumCap; // 프리미엄가 상한 (기본 20)
         private String accessCode; // 선택적 참여 코드
     }
 
@@ -21,6 +22,7 @@ public class TournamentDto {
         private int totalPoints;
         private int bidUnit;
         private int maxTeamSize;
+        private int premiumCap;
         private String status;
         private boolean hasAccessCode; // 코드 세팅 여부 (frontend에서 UI 반영)
         private List<TeamDto.Response> teams;

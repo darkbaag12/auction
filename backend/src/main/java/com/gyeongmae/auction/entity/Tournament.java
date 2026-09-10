@@ -25,7 +25,7 @@ public class Tournament {
 
     @Column(nullable = false)
     @Builder.Default
-    private int totalPoints = 1000;
+    private int totalPoints = 290; // 룰북 4-3: 팀장 본인 점수 포함 총 290점
 
     @Column(nullable = false)
     @Builder.Default
@@ -34,6 +34,11 @@ public class Tournament {
     @Column(nullable = false)
     @Builder.Default
     private int maxTeamSize = 5;
+
+    /** 팀장이 올릴 수 있는 프리미엄가 상한. */
+    @Column(nullable = false)
+    @Builder.Default
+    private int premiumCap = 20;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)

@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { api } from '../../lib/api';
-import { Tournament, TeamResponse, PlayerResponse, POSITION_LABELS, TIER_COLORS, TIER_LABELS } from '../../lib/types';
+import { Tournament, TeamResponse, PlayerResponse, LINES, POSITION_LABELS, TIER_COLORS, TIER_LABELS } from '../../lib/types';
 import { Suspense } from 'react';
 
 function AdminContent() {
@@ -29,20 +29,23 @@ function AdminContent() {
 
   // Tournament Creation Form
   const [tournamentName, setTournamentName] = useState('');
-  const [totalPoints, setTotalPoints] = useState(1000);
-  const [bidUnit, setBidUnit] = useState(5);
+  // 룰북 4-3: 팀장 본인 점수를 포함해 총 290점
+  const [totalPoints, setTotalPoints] = useState(290);
+  const [bidUnit, setBidUnit] = useState(1);
   const [maxTeamSize, setMaxTeamSize] = useState(5);
+  const [premiumCap, setPremiumCap] = useState(20);
   const [isCreating, setIsCreating] = useState(false);
 
   // Team form
   const [teamName, setTeamName] = useState('');
   const [captainName, setCaptainName] = useState('');
+  const [captainPosition, setCaptainPosition] = useState('TOP');
   const [startingPoints, setStartingPoints] = useState<string>('');
 
   // Player form
   const [playerName, setPlayerName] = useState('');
   const [playerTier, setPlayerTier] = useState('GOLD');
-  const [playerDivision, setPlayerDivision] = useState('IV');
+  const [playerDivision, setPlayerDivision] = useState('4');
   const [playerPosition, setPlayerPosition] = useState('MID');
   const [playerSubPosition, setPlayerSubPosition] = useState('');
   const [playerChampions, setPlayerChampions] = useState('');
@@ -51,7 +54,8 @@ function AdminContent() {
   const [showManualAssign, setShowManualAssign] = useState(false);
   const [manualAssignPlayerId, setManualAssignPlayerId] = useState<number | ''>('');
   const [manualAssignTeamId, setManualAssignTeamId] = useState<number | ''>('');
-  const [manualAssignPoints, setManualAssignPoints] = useState<number | ''>('');
+  const [manualAssignPosition, setManualAssignPosition] = useState<string>('');
+  const [manualAssignPremium, setManualAssignPremium] = useState<number | ''>(0);
 
   const [showAddTeam, setShowAddTeam] = useState(false);
   const [showAddPlayer, setShowAddPlayer] = useState(false);
@@ -117,6 +121,7 @@ function AdminContent() {
         totalPoints,
         bidUnit,
         maxTeamSize,
+        premiumCap,
       });
       setResolvedTournamentId(result.id);
       window.location.href = `/admin?tournamentId=${result.id}`;
@@ -131,9 +136,10 @@ function AdminContent() {
     if (!teamName.trim() || !captainName.trim() || !resolvedTournamentId) return;
     try {
       const sp = startingPoints.trim() ? parseInt(startingPoints, 10) : undefined;
-      await api.createTeam(resolvedTournamentId, { 
-        name: teamName, 
+      await api.createTeam(resolvedTournamentId, {
+        name: teamName,
         captainName,
+        captainPosition,
         startingPoints: sp
       });
       setTeamName(''); setCaptainName(''); setStartingPoints(''); setShowAddTeam(false);
@@ -168,8 +174,9 @@ function AdminContent() {
     if (!playerName.trim() || !resolvedTournamentId) return;
     try {
       await api.createPlayer(resolvedTournamentId, {
+        name: playerName,
         summonerName: playerName,
-        tier: playerTier,
+        tier: `${playerTier} ${playerDivision}`,
         rankDivision: playerDivision,
         lp: 0,
         mainPosition: playerPosition,
@@ -196,27 +203,48 @@ function AdminContent() {
     }
   };
 
+  const manualAssignPlayer = players.find(p => p.id === Number(manualAssignPlayerId));
+  const manualAssignTeam = teams.find(t => t.id === Number(manualAssignTeamId));
+  const manualAssignBase = manualAssignPlayer && manualAssignPosition
+    ? (manualAssignPlayer.lineScores?.[manualAssignPosition] ?? 0)
+    : 0;
+  const manualAssignFinal = Math.max(0, manualAssignBase + Number(manualAssignPremium || 0));
+
   const handleManualAssign = async () => {
-    if (!resolvedTournamentId || manualAssignPlayerId === '' || manualAssignTeamId === '' || manualAssignPoints === '') {
-      setError('모든 항목을 입력해주세요.');
+    if (!resolvedTournamentId || manualAssignPlayerId === '' || manualAssignTeamId === '' || !manualAssignPosition) {
+      setError('선수 / 팀 / 라인을 모두 선택해주세요.');
       return;
     }
-    if (!window.confirm('이 선수를 해당 팀으로 수동 낙찰시키겠습니까?')) return;
-    
+    if (!window.confirm(`이 선수를 ${POSITION_LABELS[manualAssignPosition]} 라인으로 배정합니다.
+차감 포인트: ${manualAssignFinal}P`)) return;
+
     try {
       await api.manualAssignPlayer(resolvedTournamentId, {
         playerId: Number(manualAssignPlayerId),
         teamId: Number(manualAssignTeamId),
-        amount: Number(manualAssignPoints)
+        position: manualAssignPosition,
+        premium: Number(manualAssignPremium || 0),
       });
       setShowManualAssign(false);
       setManualAssignPlayerId('');
       setManualAssignTeamId('');
-      setManualAssignPoints('');
+      setManualAssignPosition('');
+      setManualAssignPremium(0);
       fetchData();
       alert('수동 배정이 완료되었습니다.');
     } catch (err: any) {
       setError(`수동 배정 실패: ${err.message}`);
+    }
+  };
+
+  /** 팀장이 맡을 라인 변경. 팀장 점수가 예산에 포함되므로 차액이 자동 반영된다. */
+  const handleChangeCaptainLine = async (teamId: number, position: string) => {
+    if (!resolvedTournamentId) return;
+    try {
+      await api.updateTeam(resolvedTournamentId, teamId, { captainPosition: position });
+      fetchData();
+    } catch (err: any) {
+      setError(`팀장 라인 변경 실패: ${err.message}`);
     }
   };
 
@@ -299,6 +327,19 @@ function AdminContent() {
               </div>
             </div>
 
+            <div className="input-group">
+              <label>프리미엄가 상한 (룰북 4-3: +20)</label>
+              <input
+                className="input"
+                type="number"
+                value={premiumCap}
+                onChange={(e) => setPremiumCap(Number(e.target.value))}
+              />
+              <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '4px' }}>
+                팀장은 기준가가 아닌 프리미엄가만 올립니다. 최종가 = 라인 기준 점수 + 프리미엄가.
+              </p>
+            </div>
+
             {error && (
               <p style={{ color: 'var(--danger)', fontSize: '0.85rem', marginBottom: '12px' }}>{error}</p>
             )}
@@ -336,7 +377,7 @@ function AdminContent() {
         </a>
         <h1>⚙️ 대회 관리</h1>
         <p style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-          {tournament?.name} | 포인트: {tournament?.totalPoints} | 입찰단위: {tournament?.bidUnit} | 팀 인원: {tournament?.maxTeamSize}
+          {tournament?.name} | 팀 예산: {tournament?.totalPoints}P (팀장 점수 포함) | 프리미엄 상한: +{tournament?.premiumCap} | 팀 인원: {tournament?.maxTeamSize}
           <button
             className="btn btn-sm"
             style={{ background: 'rgba(239,68,68,0.15)', color: 'var(--danger)', border: '1px solid rgba(239,68,68,0.3)', padding: '4px 10px', fontSize: '0.8rem' }}
@@ -379,50 +420,76 @@ function AdminContent() {
                     </button>
                   </div>
                 </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                  <span>팀장 라인</span>
+                  <select
+                    className="input"
+                    style={{ padding: '4px 8px', fontSize: '0.8rem', width: 'auto' }}
+                    value={team.captainPosition ?? ''}
+                    onChange={(e) => handleChangeCaptainLine(team.id, e.target.value)}
+                  >
+                    <option value="">미지정</option>
+                    {LINES.map((l) => (
+                      <option key={l} value={l}>{POSITION_LABELS[l]}</option>
+                    ))}
+                  </select>
+                  <span>팀장 점수 <strong style={{ color: 'var(--gold)' }}>{team.captainScore}P</strong></span>
+                </div>
                 <div className="team-card-roster-list" style={{ marginTop: '12px' }}>
-                  {team.members.map((m) => {
-                    const playerRecord = players.find(p => p.id === m.playerId);
-                    const displayName = playerRecord?.name || m.summonerName;
-                    const showSummonerName = displayName !== m.summonerName;
-                    
-                    return (
-                      <div key={m.playerId} className="roster-list-item">
-                        <div className="player-pic">
-                          {m.summonerName?.charAt(0) || '?'}
+                  {LINES.map((line) => {
+                    const m = team.members.find(mem => mem.assignedPosition === line);
+                    if (m) {
+                      const playerRecord = players.find(p => p.id === m.playerId);
+                      const displayName = m.name || playerRecord?.name || m.summonerName;
+                      return (
+                        <div key={line} className="roster-list-item">
+                          <div className="player-pic" style={{ fontSize: '0.7rem', fontWeight: 800 }}>{POSITION_LABELS[line]}</div>
+                          <div className="player-info">
+                            <div className="player-name-row">
+                              <span className="player-name">{displayName}</span>
+                              {m.tier && (
+                                <span style={{ fontSize: '0.65rem', color: TIER_COLORS[m.tier] || 'var(--text-muted)', fontWeight: 800, border: `1px solid ${TIER_COLORS[m.tier]}`, borderRadius: '4px', padding: '2px 6px' }}>
+                                  {m.tier}
+                                </span>
+                              )}
+                            </div>
+                            <span className="summoner-name">@{m.summonerName}</span>
+                          </div>
+                          <div className="bid-info">
+                            <span className="bid-label">기준 {m.basePrice} {m.premium >= 0 ? `+${m.premium}` : m.premium}</span>
+                            <span className="bid-price">{m.purchasePrice} pt</span>
+                          </div>
                         </div>
+                      );
+                    }
+                    if (team.captainPosition === line) {
+                      return (
+                        <div key={line} className="roster-list-item" style={{ background: 'rgba(200,155,60,0.08)' }}>
+                          <div className="player-pic" style={{ fontSize: '0.7rem', fontWeight: 800, borderColor: 'var(--gold)' }}>{POSITION_LABELS[line]}</div>
+                          <div className="player-info">
+                            <div className="player-name-row">
+                              <span className="player-name">{team.captainName}</span>
+                              <span style={{ fontSize: '0.65rem', color: 'var(--gold)', fontWeight: 800, border: '1px solid var(--gold)', borderRadius: '4px', padding: '2px 6px' }}>팀장</span>
+                            </div>
+                          </div>
+                          <div className="bid-info">
+                            <span className="bid-price">{team.captainScore} pt</span>
+                          </div>
+                        </div>
+                      );
+                    }
+                    return (
+                      <div key={line} className="roster-list-item" style={{ opacity: 0.45 }}>
+                        <div className="player-pic" style={{ borderStyle: 'dashed', fontSize: '0.7rem', fontWeight: 800 }}>{POSITION_LABELS[line]}</div>
                         <div className="player-info">
                           <div className="player-name-row">
-                            <span className="player-name">{displayName}</span>
-                            {m.tier && (
-                              <span style={{ fontSize: '0.65rem', color: TIER_COLORS[m.tier] || 'var(--text-muted)', fontWeight: 800, border: `1px solid ${TIER_COLORS[m.tier]}`, borderRadius: '4px', padding: '2px 6px' }}>
-                                {m.tier}
-                              </span>
-                            )}
+                            <span className="player-name" style={{ color: 'var(--text-muted)' }}>빈 라인</span>
                           </div>
-                          {showSummonerName && (
-                            <span className="summoner-name">@{m.summonerName}</span>
-                          )}
                         </div>
-                        <div className="bid-info">
-                          <span className="bid-label">WINNING BID</span>
-                          <span className="bid-price">{m.purchasePrice} pt</span>
-                        </div>
+                        <div className="bid-info"></div>
                       </div>
                     );
                   })}
-                  {Array.from({ length: team.remainingSlots }).map((_, i) => (
-                    <div key={`empty-${i}`} className="roster-list-item" style={{ opacity: 0.5 }}>
-                      <div className="player-pic" style={{ borderStyle: 'dashed' }}>
-                        ?
-                      </div>
-                      <div className="player-info">
-                        <div className="player-name-row">
-                          <span className="player-name" style={{ color: 'var(--text-muted)' }}>빈 슬롯</span>
-                        </div>
-                      </div>
-                      <div className="bid-info"></div>
-                    </div>
-                  ))}
                 </div>
               </div>
             ))}
@@ -444,6 +511,7 @@ function AdminContent() {
                 <th>라운드</th>
                 <th>선수 (소환사명)</th>
                 <th>낙찰 팀</th>
+                <th>배정 라인</th>
                 <th>낙찰가</th>
                 <th>상태</th>
                 <th>작업</th>
@@ -457,11 +525,21 @@ function AdminContent() {
                     <div style={{ fontWeight: 600 }}>{round.player.name}</div>
                     <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{round.player.summonerName}</div>
                   </td>
-                  <td style={{ fontWeight: 600, color: round.highestBidderTeam ? 'var(--text-primary)' : 'var(--text-muted)' }}>
-                    {round.highestBidderTeam || '-'}
+                  <td style={{ fontWeight: 600, color: round.winningTeamName ? 'var(--text-primary)' : 'var(--text-muted)' }}>
+                    {round.winningTeamName || round.highestBidderTeam || '-'}
+                  </td>
+                  <td>
+                    {round.assignedPosition
+                      ? <span className="badge badge-position">{POSITION_LABELS[round.assignedPosition] || round.assignedPosition}</span>
+                      : '-'}
                   </td>
                   <td style={{ color: 'var(--gold)', fontWeight: 600 }}>
-                    {round.currentPrice}P
+                    {round.finalPrice != null ? `${round.finalPrice}P` : '-'}
+                    {round.finalPremium != null && (
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginLeft: '4px' }}>
+                        (프리미엄 {round.finalPremium >= 0 ? `+${round.finalPremium}` : round.finalPremium})
+                      </span>
+                    )}
                   </td>
                   <td>
                     <span className={`badge badge-${round.status.toLowerCase()}`}>{round.status}</span>
@@ -522,6 +600,7 @@ function AdminContent() {
                 <th>성명 (소환사명)</th>
                 <th>티어</th>
                 <th>포지션</th>
+                <th>라인별 기준 점수 (탑/정글/미드/원딜/서폿)</th>
                 <th>모스트</th>
                 <th>상태</th>
                 <th>팀</th>
@@ -532,7 +611,15 @@ function AdminContent() {
               {players.filter(p => playerSearchTerm === '' || p.name.includes(playerSearchTerm) || p.summonerName.includes(playerSearchTerm)).map((p) => (
                 <tr key={p.id}>
                   <td>
-                    <div style={{ fontWeight: 600 }}>{p.name}</div>
+                    <div style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      {p.name}
+                      {p.isCaptain && (
+                        <span style={{ fontSize: '0.65rem', color: 'var(--gold)', border: '1px solid var(--gold)', borderRadius: '4px', padding: '1px 5px' }}>팀장</span>
+                      )}
+                      {p.isNewMember && (
+                        <span style={{ fontSize: '0.65rem', color: 'var(--success)', border: '1px solid var(--success)', borderRadius: '4px', padding: '1px 5px' }}>신입</span>
+                      )}
+                    </div>
                     <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{p.summonerName}</div>
                   </td>
                   <td>
@@ -554,13 +641,33 @@ function AdminContent() {
                       )}
                     </div>
                   </td>
+                  <td style={{ fontSize: '0.8rem', letterSpacing: '0.02em' }}>
+                    {LINES.map((line, i) => (
+                      <span key={line}>
+                        {i > 0 && <span style={{ color: 'var(--text-muted)' }}> / </span>}
+                        <span style={{
+                          fontWeight: line === p.mainPosition ? 800 : 400,
+                          color: line === p.mainPosition ? 'var(--gold)' : line === p.subPosition ? 'var(--accent-light)' : 'var(--text-secondary)',
+                        }}>
+                          {p.lineScores?.[line] ?? '-'}
+                        </span>
+                      </span>
+                    ))}
+                  </td>
                   <td style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
                     {p.mostChampions || '-'}
                   </td>
                   <td>
                     <span className={`badge badge-${p.status.toLowerCase()}`}>{p.status}</span>
                   </td>
-                  <td>{p.teamName || '-'}</td>
+                  <td>
+                    {p.teamName || '-'}
+                    {p.assignedPosition && (
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginLeft: '4px' }}>
+                        ({POSITION_LABELS[p.assignedPosition] || p.assignedPosition})
+                      </span>
+                    )}
+                  </td>
                   <td style={{ color: 'var(--gold)', fontWeight: 600 }}>{p.soldPrice != null ? `${p.soldPrice}P` : '-'}</td>
                 </tr>
               ))}
@@ -585,8 +692,14 @@ function AdminContent() {
                 onChange={(e) => setCaptainName(e.target.value)} />
             </div>
             <div className="input-group">
-              <label>초기 포인트 (선택, 기본: 대회설정값)</label>
-              <input type="number" className="input" placeholder="예: 1200" value={startingPoints}
+              <label>팀장이 맡을 라인</label>
+              <select className="input" value={captainPosition} onChange={(e) => setCaptainPosition(e.target.value)}>
+                {LINES.map((l) => <option key={l} value={l}>{POSITION_LABELS[l]}</option>)}
+              </select>
+            </div>
+            <div className="input-group">
+              <label>초기 포인트 (선택, 기본: 대회설정값 {tournament?.totalPoints ?? 290}P)</label>
+              <input type="number" className="input" placeholder="예: 290" value={startingPoints}
                 onChange={(e) => setStartingPoints(e.target.value)} />
             </div>
             <div className="modal-actions">
@@ -611,19 +724,21 @@ function AdminContent() {
               <div className="input-group">
                 <label>티어</label>
                 <select className="input" value={playerTier} onChange={(e) => setPlayerTier(e.target.value)}>
-                  {Object.keys(TIER_COLORS).map((t) => <option key={t} value={t}>{t}</option>)}
+                  {['IRON', 'BRONZE', 'SILVER', 'GOLD', 'PLATINUM', 'EMERALD', 'DIAMOND', 'MASTER'].map((t) => (
+                    <option key={t} value={t}>{TIER_LABELS[t] || t}</option>
+                  ))}
                 </select>
               </div>
               <div className="input-group">
                 <label>등급</label>
                 <select className="input" value={playerDivision} onChange={(e) => setPlayerDivision(e.target.value)}>
-                  {['I', 'II', 'III', 'IV'].map((d) => <option key={d} value={d}>{d}</option>)}
+                  {['1', '2', '3', '4'].map((d) => <option key={d} value={d}>{d}</option>)}
                 </select>
               </div>
               <div className="input-group">
                 <label>주 포지션</label>
                 <select className="input" value={playerPosition} onChange={(e) => setPlayerPosition(e.target.value)}>
-                  {Object.entries(POSITION_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                  {LINES.map((l) => <option key={l} value={l}>{POSITION_LABELS[l]}</option>)}
                 </select>
               </div>
             </div>
@@ -631,9 +746,12 @@ function AdminContent() {
               <label>부 포지션</label>
               <select className="input" value={playerSubPosition} onChange={(e) => setPlayerSubPosition(e.target.value)}>
                 <option value="">없음</option>
-                {Object.entries(POSITION_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                {LINES.map((l) => <option key={l} value={l}>{POSITION_LABELS[l]}</option>)}
               </select>
             </div>
+            <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '8px' }}>
+              라인별 기준 점수는 룰북 3-2 기준 점수표에서 티어에 맞춰 자동 계산됩니다.
+            </p>
             <div className="input-group">
               <label>모스트 챔피언</label>
               <input className="input" placeholder="예: 야스오, 제드, 리신" value={playerChampions}
@@ -654,10 +772,22 @@ function AdminContent() {
             <h2>⚡ 선수 수동 배정</h2>
             <div className="input-group">
               <label>대상 선수</label>
-              <select className="input" value={manualAssignPlayerId} onChange={(e) => setManualAssignPlayerId(Number(e.target.value))}>
+              <select
+                className="input"
+                value={manualAssignPlayerId}
+                onChange={(e) => {
+                  const id = Number(e.target.value);
+                  setManualAssignPlayerId(id);
+                  const picked = players.find(p => p.id === id);
+                  setManualAssignPosition(picked?.mainPosition || '');
+                }}
+              >
                 <option value="">선수 선택 (대기/유찰 상태만)</option>
-                {players.filter(p => p.status === 'AVAILABLE' || p.status === 'UNSOLD').map(p => (
-                  <option key={p.id} value={p.id}>{p.summonerName} ({p.name}) - {POSITION_LABELS[p.mainPosition] || p.mainPosition}</option>
+                {players.filter(p => !p.isCaptain && (p.status === 'AVAILABLE' || p.status === 'UNSOLD')).map(p => (
+                  <option key={p.id} value={p.id}>
+                    {p.name} ({p.summonerName}) - 주 {POSITION_LABELS[p.mainPosition] || p.mainPosition} {p.mainScore ?? '-'}P
+                    {p.subPosition ? ` / 부 ${POSITION_LABELS[p.subPosition]} ${p.subScore ?? '-'}P` : ''}
+                  </option>
                 ))}
               </select>
             </div>
@@ -666,14 +796,29 @@ function AdminContent() {
               <select className="input" value={manualAssignTeamId} onChange={(e) => setManualAssignTeamId(Number(e.target.value))}>
                 <option value="">팀 선택</option>
                 {teams.filter(t => t.remainingSlots > 0).map(t => (
-                  <option key={t.id} value={t.id}>{t.name} (잔여: {t.remainingPoints}P, 슬롯: {t.remainingSlots})</option>
+                  <option key={t.id} value={t.id}>{t.name} (잔여: {t.remainingPoints}P, 빈 라인: {t.openLines.map(l => POSITION_LABELS[l]).join('·')})</option>
                 ))}
               </select>
             </div>
             <div className="input-group">
-              <label>배정 포인트</label>
-              <input type="number" className="input" placeholder="예: 50" value={manualAssignPoints} onChange={(e) => setManualAssignPoints(Number(e.target.value))} />
+              <label>배정 라인</label>
+              <select className="input" value={manualAssignPosition} onChange={(e) => setManualAssignPosition(e.target.value)}>
+                <option value="">라인 선택</option>
+                {(manualAssignTeam ? manualAssignTeam.openLines : [...LINES]).map(l => (
+                  <option key={l} value={l}>
+                    {POSITION_LABELS[l]} — 기준 {manualAssignPlayer?.lineScores?.[l] ?? '-'}P
+                  </option>
+                ))}
+              </select>
             </div>
+            <div className="input-group">
+              <label>프리미엄가</label>
+              <input type="number" className="input" placeholder="예: 5" value={manualAssignPremium} onChange={(e) => setManualAssignPremium(Number(e.target.value))} />
+            </div>
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '8px' }}>
+              차감 포인트: <strong style={{ color: 'var(--gold)' }}>{manualAssignFinal}P</strong>
+              {' '}(기준 {manualAssignBase} {Number(manualAssignPremium || 0) >= 0 ? `+${Number(manualAssignPremium || 0)}` : Number(manualAssignPremium || 0)})
+            </p>
             <div className="modal-actions">
               <button className="btn btn-outline" onClick={() => setShowManualAssign(false)}>취소</button>
               <button className="btn btn-warning" onClick={handleManualAssign}>강제 배정</button>
