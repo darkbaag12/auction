@@ -47,6 +47,7 @@ public class Team {
     private LocalDateTime createdAt = LocalDateTime.now();
 
     @OneToMany(mappedBy = "team", cascade = CascadeType.ALL, orphanRemoval = true)
+    @OrderBy("id ASC")
     @Builder.Default
     private List<TeamMember> members = new ArrayList<>();
 

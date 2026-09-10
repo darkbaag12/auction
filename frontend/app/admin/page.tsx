@@ -405,7 +405,10 @@ function AdminContent() {
               <div key={team.id} className="team-card-horizontal" style={{ position: 'relative' }}>
                 <div className="team-card-horizontal-header">
                   <h3 style={{ fontSize: '1.2rem', margin: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    {team.name} <span style={{fontSize: '0.85rem', color: 'var(--text-muted)'}}>({team.captainName})</span>
+                    {team.name}
+                    {team.name !== team.captainName && (
+                      <span style={{fontSize: '0.85rem', color: 'var(--text-muted)'}}>({team.captainName})</span>
+                    )}
                   </h3>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                     <div className="points" style={{ fontSize: '0.95rem' }}>

@@ -79,7 +79,7 @@ public class AuctionService {
             p.setTeam(null);
             playerRepository.save(p);
         }
-        List<Team> teams = teamRepository.findByTournamentId(tournamentId);
+        List<Team> teams = teamRepository.findByTournamentIdOrderByIdAsc(tournamentId);
         teamRepository.deleteAll(teams);
         playerRepository.deleteAll(players);
         tournamentRepository.delete(tournament);
@@ -191,7 +191,7 @@ public class AuctionService {
 
     @Transactional(readOnly = true)
     public List<TeamDto.Response> getTeams(Long tournamentId) {
-        return teamRepository.findByTournamentId(tournamentId).stream()
+        return teamRepository.findByTournamentIdOrderByIdAsc(tournamentId).stream()
                 .map(this::toTeamResponse)
                 .collect(Collectors.toList());
     }
@@ -370,42 +370,57 @@ public class AuctionService {
         }
     }
 
-    /** 팀장 목록 순서대로 '1팀, 2팀 ...' 을 만든다. 같은 팀장 이름의 팀이 이미 있으면 건너뛴다. */
+    /**
+     * 엑셀의 팀장 목록대로 팀을 맞춘다. 팀 이름은 팀장 이름을 그대로 쓴다.
+     * 같은 팀장의 팀이 이미 있으면 새로 만들지 않고 엑셀 기준으로 갱신한다.
+     */
     private void createTeamsForCaptains(Tournament tournament, List<String> captainNames, Map<String, Player> captainByName) {
-        List<Team> existing = teamRepository.findByTournamentId(tournament.getId());
-        Set<String> existingCaptains = existing.stream()
-                .map(t -> ExcelRosterParser.normalize(t.getCaptainName()))
-                .collect(Collectors.toSet());
+        List<Team> existing = teamRepository.findByTournamentIdOrderByIdAsc(tournament.getId());
 
-        int teamNumber = existing.size();
         for (String captainName : captainNames) {
             String key = ExcelRosterParser.normalize(captainName);
-            if (existingCaptains.contains(key)) {
-                // 이미 있는 팀이면 팀장 선수 기록만 연결해준다
-                existing.stream()
-                        .filter(t -> ExcelRosterParser.normalize(t.getCaptainName()).equals(key))
-                        .findFirst()
-                        .ifPresent(t -> linkCaptainToTeam(t, captainByName.get(key)));
-                continue;
+
+            Team team = existing.stream()
+                    .filter(t -> ExcelRosterParser.normalize(t.getCaptainName()).equals(key))
+                    .findFirst()
+                    .orElse(null);
+
+            if (team == null) {
+                team = teamRepository.save(Team.builder()
+                        .tournament(tournament)
+                        .name(captainName.trim())
+                        .captainName(captainName.trim())
+                        .captainScore(0)
+                        .remainingPoints(tournament.getTotalPoints())
+                        .build());
             }
 
-            Player captain = captainByName.get(key);
-            String line = captain != null ? captain.getMainPosition() : null;
-            int captainScore = captain != null && line != null && !line.isBlank() ? captain.getScoreFor(line) : 0;
-
-            teamNumber++;
-            Team team = Team.builder()
-                    .tournament(tournament)
-                    .name(teamNumber + "팀")
-                    .captainName(captainName.trim())
-                    .captainPosition(line != null && !line.isBlank() ? line : null)
-                    .captainScore(captainScore)
-                    // 룰북 4-3: 팀장 본인 점수를 포함해 총 290점
-                    .remainingPoints(tournament.getTotalPoints() - captainScore)
-                    .build();
-            team = teamRepository.save(team);
-            linkCaptainToTeam(team, captain);
+            applyCaptainToTeam(team, captainByName.get(key), captainName);
         }
+    }
+
+    /**
+     * 팀장 정보를 팀에 반영한다.
+     * 룰북 4-3에 따라 팀장 본인 점수가 예산에 포함되므로, 기존 점수와의 차액만큼 예산을 조정한다.
+     * (재업로드로 팀이 이미 있는 경우에도 예산이 어긋나지 않는다)
+     */
+    private void applyCaptainToTeam(Team team, Player captain, String captainName) {
+        team.setCaptainName(captainName.trim());
+        team.setName(captainName.trim());
+
+        // 관리자가 지정해 둔 라인이 있으면 존중하고, 없으면 주 포지션을 쓴다
+        String line = team.getCaptainPosition();
+        if ((line == null || line.isBlank()) && captain != null) {
+            line = captain.getMainPosition();
+        }
+        int newScore = (captain != null && line != null && !line.isBlank()) ? captain.getScoreFor(line) : 0;
+
+        team.setRemainingPoints(team.getRemainingPoints() + team.getCaptainScore() - newScore);
+        team.setCaptainPosition(line != null && !line.isBlank() ? line : null);
+        team.setCaptainScore(newScore);
+        teamRepository.save(team);
+
+        linkCaptainToTeam(team, captain);
     }
 
     private void linkCaptainToTeam(Team team, Player captain) {
@@ -596,7 +611,7 @@ public class AuctionService {
      * 조건을 만족하는 팀이 하나도 없으면 그 매물에 한해 조건을 적용하지 않는다.
      */
     private Map<Long, List<String>> eligibleLinesByTeam(AuctionRound round) {
-        List<Team> teams = teamRepository.findByTournamentId(round.getTournament().getId());
+        List<Team> teams = teamRepository.findByTournamentIdOrderByIdAsc(round.getTournament().getId());
         List<String> declared = declaredLines(round.getPlayer());
 
         Map<Long, List<String>> strict = new LinkedHashMap<>();
@@ -694,7 +709,7 @@ public class AuctionService {
                 .build());
         round.getBids().add(bid);
 
-        Map<Long, Integer> teamsPoints = teamRepository.findByTournamentId(round.getTournament().getId())
+        Map<Long, Integer> teamsPoints = teamRepository.findByTournamentIdOrderByIdAsc(round.getTournament().getId())
                 .stream()
                 .collect(Collectors.toMap(Team::getId, Team::getRemainingPoints));
 

@@ -531,7 +531,10 @@ function AuctionContent() {
             >
               <div className="team-card-horizontal-header">
                 <h3 style={{ fontSize: '1.2rem', margin: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  {team.name} <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>({team.captainName})</span>
+                  {team.name}
+                  {team.name !== team.captainName && (
+                    <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>({team.captainName})</span>
+                  )}
                 </h3>
                 <div style={{ display: 'flex', alignItems: 'center' }}>
                   <div className="points" style={{ fontSize: '0.95rem' }}>
@@ -1029,7 +1032,10 @@ function AuctionContent() {
                 <div key={team.id} className="team-card-horizontal" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '12px', padding: '16px' }}>
                   <div className="team-card-header">
                     <h3 className="team-name" style={{ color: 'var(--text-primary)' }}>
-                      {team.name} <span className="captain-name" style={{ color: 'var(--text-muted)' }}>({team.captainName})</span>
+                      {team.name}
+                      {team.name !== team.captainName && (
+                        <span className="captain-name" style={{ color: 'var(--text-muted)' }}>({team.captainName})</span>
+                      )}
                     </h3>
                     <div className="team-points-rem" style={{ color: 'var(--text-muted)' }}>
                       사용 {spent} / 잔여 <span style={{ color: 'var(--gold)' }}>{team.remainingPoints} pt</span>
@@ -1055,7 +1061,7 @@ function AuctionContent() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               {tiedTeams.map((t) => (
                 <button key={t.id} className="btn btn-primary" onClick={() => handleClose(t.id)} style={{ width: '100%', padding: '16px', justifyContent: 'center', fontSize: '1.1rem' }}>
-                  {t.name} ({t.captainName})에게 낙찰!
+                  {t.name === t.captainName ? t.name : `${t.name} (${t.captainName})`} 팀에게 낙찰!
                 </button>
               ))}
             </div>

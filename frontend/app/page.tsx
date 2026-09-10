@@ -127,7 +127,7 @@ export default function HomePage() {
           >
             <option value="">팀을 선택하세요</option>
             {teams.map((t) => (
-              <option key={t.id} value={t.id}>{t.name} (팀장: {t.captainName})</option>
+              <option key={t.id} value={t.id}>{t.name === t.captainName ? t.name : `${t.name} (팀장: ${t.captainName})`}</option>
             ))}
           </select>
         </div>

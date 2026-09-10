@@ -50,6 +50,7 @@ public class Tournament {
     private LocalDateTime createdAt = LocalDateTime.now();
 
     @OneToMany(mappedBy = "tournament", cascade = CascadeType.ALL, orphanRemoval = true)
+    @OrderBy("id ASC")
     @Builder.Default
     private List<Team> teams = new ArrayList<>();
 

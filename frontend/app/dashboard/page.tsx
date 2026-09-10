@@ -206,7 +206,11 @@ function DashboardContent() {
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
                 <div>
                   <h3 style={{ fontSize: '1.05rem' }}>{team.name}</h3>
-                  <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{team.captainName}</p>
+                  <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                    {team.name === team.captainName
+                      ? (team.captainPosition ? `팀장 ${POSITION_LABELS[team.captainPosition]}` : '팀장')
+                      : team.captainName}
+                  </p>
                 </div>
                 <div style={{ textAlign: 'right' }}>
                   <div className="team-points" style={{ fontSize: '1.3rem' }}>{team.remainingPoints}</div>
