@@ -19,7 +19,7 @@ function DashboardContent() {
 
   // Current resolved tournament ID (from URL or latest)
   const [resolvedTournamentId, setResolvedTournamentId] = useState<number | null>(tournamentId || null);
-  const { connected, lastMessage } = useWebSocket(resolvedTournamentId || null);
+  const { connected, messageVersion, drainMessages } = useWebSocket(resolvedTournamentId || null);
 
   const fetchData = async () => {
     try {
@@ -57,34 +57,37 @@ function DashboardContent() {
   useEffect(() => { fetchData(); }, [resolvedTournamentId]);
 
   useEffect(() => {
-    if (!lastMessage) return;
-    const { type, data } = lastMessage as { type: string; data: any };
+    // 큐에 쌓인 메시지를 순서대로 전부 처리한다 (하나만 처리하면 NEW_BID가 씹힌다)
+    for (const message of drainMessages()) {
+      const { type, data } = message as { type: string; data: any };
 
-    switch (type) {
-      case 'ROUND_START':
-        setActiveRound(data);
-        setBidHistory([]);
-        break;
-      case 'ROUND_UPDATE':
-      case 'ROUND_PENDING_ASSIGN':
-        setActiveRound(data);
-        break;
-      case 'NEW_BID':
-        setBidHistory((prev) => [data, ...prev]);
-        setActiveRound((prev) => prev ? {
-          ...prev,
-          currentPremium: data.amount,
-          highestBidderTeam: data.teamName
-        } : null);
-        break;
-      case 'ROUND_SOLD':
-      case 'ROUND_UNSOLD':
-        setActiveRound(null);
-        setBidHistory([]);
-        fetchData();
-        break;
+      switch (type) {
+        case 'ROUND_START':
+          setActiveRound(data);
+          setBidHistory([]);
+          break;
+        case 'ROUND_UPDATE':
+        case 'ROUND_PENDING_ASSIGN':
+          setActiveRound(data);
+          break;
+        case 'NEW_BID':
+          setBidHistory((prev) => [data, ...prev]);
+          setActiveRound((prev) => prev ? {
+            ...prev,
+            currentPremium: data.amount,
+            highestBidderTeam: data.teamName
+          } : null);
+          break;
+        case 'ROUND_SOLD':
+        case 'ROUND_UNSOLD':
+          setActiveRound(null);
+          setBidHistory([]);
+          fetchData();
+          break;
+      }
     }
-  }, [lastMessage]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messageVersion]);
 
   if (!resolvedTournamentId) {
     return (

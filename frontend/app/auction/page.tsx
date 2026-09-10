@@ -144,7 +144,7 @@ function AuctionContent() {
   }, [isDraggingChat]);
 
   const [resolvedTournamentId, setResolvedTournamentId] = useState<number | null>(tournamentId || null);
-  const { connected, lastMessage, sendBid, sendChatMessage } = useWebSocket(
+  const { connected, messageVersion, drainMessages, sendBid, sendChatMessage } = useWebSocket(
     resolvedTournamentId || null,
     role,
     myTeamId,
@@ -203,73 +203,77 @@ function AuctionContent() {
   }, [resolvedTournamentId]);
 
   useEffect(() => {
-    if (!lastMessage) return;
-    const { type, data } = lastMessage as { type: string; data: any };
+    // 큐에 쌓인 메시지를 순서대로 전부 처리한다.
+    // 하나만 처리하면 입찰 한 번에 오는 NEW_BID + ROUND_UPDATE 중 앞의 것이 씹힌다.
+    for (const message of drainMessages()) {
+      const { type, data } = message as { type: string; data: any };
 
-    switch (type) {
-      case 'ROUND_START':
-        setActiveRound(data);
-        setBidHistory([]);
-        setPremium(data.premiumFloor ?? 0);
-        setError('');
-        break;
-      case 'ROUND_UPDATE':
-        // 프리미엄가가 오를 때마다 라인별 표시 가격을 서버 값으로 갱신
-        setActiveRound(data);
-        break;
-      case 'NEW_BID':
-        setBidHistory((prev) => [data, ...prev]);
-        setActiveRound((prev) =>
-          prev
-            ? { ...prev, currentPremium: data.amount, highestBidderTeam: data.teamName, highestBidderTeamId: data.teamId }
-            : null,
-        );
-        if (data.teamsPoints) {
-          setTeams((prevTeams) =>
-            prevTeams.map((t) => {
-              const updatedPoints = data.teamsPoints[String(t.id)];
-              return updatedPoints !== undefined ? { ...t, remainingPoints: updatedPoints } : t;
-            }),
+      switch (type) {
+        case 'ROUND_START':
+          setActiveRound(data);
+          setBidHistory([]);
+          setPremium(data.premiumFloor ?? 0);
+          setError('');
+          break;
+        case 'ROUND_UPDATE':
+          // 프리미엄가가 오를 때마다 라인별 표시 가격을 서버 값으로 갱신
+          setActiveRound(data);
+          break;
+        case 'NEW_BID':
+          setBidHistory((prev) => [data, ...prev]);
+          setActiveRound((prev) =>
+            prev
+              ? { ...prev, currentPremium: data.amount, highestBidderTeam: data.teamName, highestBidderTeamId: data.teamId }
+              : null,
           );
+          if (data.teamsPoints) {
+            setTeams((prevTeams) =>
+              prevTeams.map((t) => {
+                const updatedPoints = data.teamsPoints[String(t.id)];
+                return updatedPoints !== undefined ? { ...t, remainingPoints: updatedPoints } : t;
+              }),
+            );
+          }
+          break;
+        case 'ROUND_PENDING_ASSIGN':
+          setActiveRound(data);
+          setShowTiebreaker(false);
+          break;
+        case 'ROUND_SOLD':
+        case 'ROUND_UNSOLD':
+          setActiveRound(null);
+          setBidHistory([]);
+          fetchData();
+          break;
+        case 'BID_REJECTED': {
+          // 내 팀(호스트는 선택한 팀)의 입찰이 거절된 경우에만 표시
+          const rejectedTeamId = Number(data?.teamId);
+          const mine = role === 'CAPTAIN' ? myTeamId : selectedTeamId;
+          if (mine != null && rejectedTeamId === mine) {
+            setError(`입찰 거절: ${data?.reason ?? '알 수 없는 이유'}`);
+          }
+          break;
         }
-        break;
-      case 'ROUND_PENDING_ASSIGN':
-        setActiveRound(data);
-        setShowTiebreaker(false);
-        break;
-      case 'ROUND_SOLD':
-      case 'ROUND_UNSOLD':
-        setActiveRound(null);
-        setBidHistory([]);
-        fetchData();
-        break;
-      case 'BID_REJECTED': {
-        // 내 팀(호스트는 선택한 팀)의 입찰이 거절된 경우에만 표시
-        const rejectedTeamId = Number(data?.teamId);
-        const mine = role === 'CAPTAIN' ? myTeamId : selectedTeamId;
-        if (mine != null && rejectedTeamId === mine) {
-          setError(`입찰 거절: ${data?.reason ?? '알 수 없는 이유'}`);
-        }
-        break;
+        case 'TEAMS_UPDATED':
+        case 'BID_ROLLBACK':
+          fetchData();
+          break;
+        case 'CHAT':
+          setChatMessages((prev) => [
+            ...prev,
+            {
+              id: Date.now().toString() + Math.random().toString(),
+              senderName: data.senderName,
+              message: data.message,
+              isMe: data.teamId === myTeamId,
+              timestamp: data.timestamp,
+            },
+          ]);
+          break;
       }
-      case 'TEAMS_UPDATED':
-      case 'BID_ROLLBACK':
-        fetchData();
-        break;
-      case 'CHAT':
-        setChatMessages((prev) => [
-          ...prev,
-          {
-            id: Date.now().toString() + Math.random().toString(),
-            senderName: data.senderName,
-            message: data.message,
-            isMe: data.teamId === myTeamId,
-            timestamp: data.timestamp,
-          },
-        ]);
-        break;
     }
-  }, [lastMessage, myTeamId, role, selectedTeamId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messageVersion]);
 
   useEffect(() => {
     logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
