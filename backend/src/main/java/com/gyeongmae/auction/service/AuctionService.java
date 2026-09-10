@@ -562,10 +562,13 @@ public class AuctionService {
         int premiumFloor = 0;
         if (isReAuction) {
             List<Team> teams = teamRepository.findByTournamentIdOrderByIdAsc(tournamentId);
+            int unsoldCount = auctionRoundRepository.countByPlayerIdAndStatus(player.getId(), AuctionRoundStatus.UNSOLD);
+
             // 주/부 라인이 전 팀 마감이라 빈 라인 아무 곳에나 넣어야 하는 매물은
-            // 유찰 할인을 적용하지 않고 본경매처럼 0부터 시작한다.
-            // (할인의 근거가 '신청한 라인에서 안 팔렸다'인데, 다른 라인으로 가는 경우엔 해당되지 않는다)
-            premiumFloor = anyDeclaredLineOpen(player, teams) ? reAuctionFloor(player, teams) : 0;
+            // 할인 근거('신청한 라인에서 안 팔렸다')가 없으므로 본경매처럼 0부터 시작한다.
+            // 다만 그렇게 정가로 올린 재경매마저 또 유찰되면 그때부터는 할인 하한을 적용한다.
+            boolean applyDiscount = anyDeclaredLineOpen(player, teams) || unsoldCount >= 2;
+            premiumFloor = applyDiscount ? reAuctionFloor(player, teams) : 0;
         }
 
         AuctionRound round = AuctionRound.builder()
