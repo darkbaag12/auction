@@ -759,6 +759,7 @@ function AuctionContent() {
                 {!declaredLines(activeRound.player).some((l) => teams.some((t) => (t.openLines ?? []).includes(l))) && (
                   <div style={{ marginTop: '8px', fontSize: '0.8rem', color: 'var(--danger)', textAlign: 'center' }}>
                     주·부 라인이 전 팀 마감 — 이 매물에 한해 빈 라인 아무 곳이나 지정할 수 있습니다 (룰북 4-3)
+                    {activeRound.reAuction && ' · 유찰 할인 없이 정가로 진행됩니다'}
                   </div>
                 )}
                 {squeezedLines.length > 0 && (

@@ -559,9 +559,14 @@ public class AuctionService {
         int premiumCap = request.getPremiumCap() != null && request.getPremiumCap() > 0
                 ? request.getPremiumCap()
                 : tournament.getPremiumCap();
-        int premiumFloor = isReAuction
-                ? reAuctionFloor(player, teamRepository.findByTournamentIdOrderByIdAsc(tournamentId))
-                : 0;
+        int premiumFloor = 0;
+        if (isReAuction) {
+            List<Team> teams = teamRepository.findByTournamentIdOrderByIdAsc(tournamentId);
+            // 주/부 라인이 전 팀 마감이라 빈 라인 아무 곳에나 넣어야 하는 매물은
+            // 유찰 할인을 적용하지 않고 본경매처럼 0부터 시작한다.
+            // (할인의 근거가 '신청한 라인에서 안 팔렸다'인데, 다른 라인으로 가는 경우엔 해당되지 않는다)
+            premiumFloor = anyDeclaredLineOpen(player, teams) ? reAuctionFloor(player, teams) : 0;
+        }
 
         AuctionRound round = AuctionRound.builder()
                 .tournament(tournament)
@@ -584,6 +589,12 @@ public class AuctionService {
         return response;
     }
 
+    /** 매물의 주/부 라인 중 빈 자리가 남은 팀이 하나라도 있는지. */
+    private boolean anyDeclaredLineOpen(Player player, List<Team> teams) {
+        List<String> declared = declaredLines(player);
+        return teams.stream().anyMatch(team -> team.getOpenLines().stream().anyMatch(declared::contains));
+    }
+
     /**
      * 유찰 재경매의 프리미엄가 하한 (룰북 4-3의 "최종가를 0으로 만드는" 하한).
      *
@@ -595,6 +606,9 @@ public class AuctionService {
      * 입찰 자격 판정({@link #eligibleLinesByTeam})과 같은 기준을 쓰므로,
      * 실제로 살 수 없는 라인 때문에 하한이 엉뚱하게 잡히지 않는다.
      * 가장 싼 라인을 기준으로 하기 때문에 어떤 라인도 최종가가 음수가 되지 않는다.
+     *
+     * <p>주/부가 전 팀 마감이라 빈 라인 아무 곳에나 넣는 경우는 이 메서드를 타지 않고
+     * 하한 0(본경매와 동일)으로 진행한다. {@link #startAuctionRound} 참고.
      */
     private int reAuctionFloor(Player player, List<Team> teams) {
         Set<String> lines = eligibleLinesByTeam(player, teams).values().stream()
