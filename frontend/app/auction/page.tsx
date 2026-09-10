@@ -284,6 +284,21 @@ function AuctionContent() {
   const eligibility = activeRound ? eligibleLinesByTeam(activeRound.player, teams) : {};
   const myEligibleLines = targetTeamId ? eligibility[targetTeamId] ?? [] : [];
 
+  /**
+   * 아직 그 라인이 빈 팀은 있는데, 그 라인을 주/부로 신청한 매물이 다 팔린 라인.
+   * (예: 주포지션 원딜인 인원이 전부 낙찰되면 남은 원딜 자리는 다른 라인 선수로 채워야 한다)
+   */
+  const squeezedLines = LINES.filter((line) => {
+    const hasOpenSlot = teams.some((t) => (t.openLines ?? []).includes(line));
+    const hasSupply = players.some(
+      (p) =>
+        !p.isCaptain &&
+        (p.status === 'AVAILABLE' || p.status === 'UNSOLD') &&
+        (p.mainPosition === line || p.subPosition === line),
+    );
+    return hasOpenSlot && !hasSupply;
+  });
+
   const premiumValue = typeof premium === 'string' ? (premium === '-' || premium === '' ? 0 : Number(premium)) : premium;
 
   /** 이 팀이 이 프리미엄가로 살 수 있는 가장 싼 최종가 */
@@ -673,6 +688,80 @@ function AuctionContent() {
                       </div>
                     </div>
                   ))}
+              </div>
+
+              {/*
+                전체 라인 최종가.
+                주/부 라인이 팀들에서 다 차버리면 룰북 4-3에 따라 빈 라인 아무 곳이나 지정할 수 있으므로,
+                5개 라인 가격을 모두 띄워서 팀장이 어디로 데려갈지 판단할 수 있게 한다.
+              */}
+              <div style={{ marginTop: '16px', width: '100%' }}>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '6px', letterSpacing: '0.08em' }}>
+                  라인별 최종가
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '8px' }}>
+                  {LINES.map((line) => {
+                    const price = activeRound.linePrices?.[line] ?? finalPriceFor(activeRound.player, line, activeRound.currentPremium);
+                    const isMain = line === activeRound.player.mainPosition;
+                    const isSub = line === activeRound.player.subPosition;
+                    // 수요: 이 라인이 아직 비어있는 팀 수
+                    const openTeams = teams.filter((t) => (t.openLines ?? []).includes(line));
+                    // 공급: 이 라인을 주/부로 신청한, 아직 안 팔린 매물 수
+                    const supply = players.filter(
+                      (p) =>
+                        !p.isCaptain &&
+                        (p.status === 'AVAILABLE' || p.status === 'UNSOLD') &&
+                        (p.mainPosition === line || p.subPosition === line),
+                    ).length;
+                    // 갈 팀은 남았는데 그 라인 매물이 동난 상태 → 다른 라인 선수를 데려와야 한다
+                    const squeezed = openTeams.length > 0 && supply === 0;
+                    const openForMe = (targetTeam?.openLines ?? []).includes(line);
+                    const accent = isMain ? 'var(--gold)' : isSub ? 'var(--accent)' : 'var(--text-secondary)';
+
+                    return (
+                      <div
+                        key={line}
+                        title={
+                          openTeams.length > 0
+                            ? `빈 팀: ${openTeams.map((t) => t.name).join(', ')}
+이 라인을 주/부로 신청한 잔여 매물: ${supply}명`
+                            : '전 팀 마감'
+                        }
+                        style={{
+                          background: squeezed ? 'rgba(239,68,68,0.12)' : openForMe ? 'rgba(255,255,255,0.07)' : 'transparent',
+                          border: `1px solid ${squeezed ? 'var(--danger)' : isMain || isSub ? accent : 'var(--border)'}`,
+                          borderRadius: '8px',
+                          padding: '8px 4px',
+                          textAlign: 'center',
+                          opacity: openTeams.length > 0 ? 1 : 0.35,
+                        }}
+                      >
+                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                          {POSITION_LABELS[line]}
+                          {isMain && <span style={{ color: 'var(--gold)', marginLeft: '3px', fontWeight: 800 }}>주</span>}
+                          {isSub && <span style={{ color: 'var(--accent)', marginLeft: '3px', fontWeight: 800 }}>부</span>}
+                        </div>
+                        <div style={{ fontSize: '1.15rem', fontWeight: 800, color: accent, lineHeight: 1.3 }}>
+                          {price}
+                          <span style={{ fontSize: '0.7rem' }}>P</span>
+                        </div>
+                        <div style={{ fontSize: '0.62rem', color: squeezed ? 'var(--danger)' : 'var(--text-muted)' }}>
+                          {openTeams.length > 0 ? `빈 팀 ${openTeams.length} · 매물 ${supply}` : '마감'}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                {!declaredLines(activeRound.player).some((l) => teams.some((t) => (t.openLines ?? []).includes(l))) && (
+                  <div style={{ marginTop: '8px', fontSize: '0.8rem', color: 'var(--danger)', textAlign: 'center' }}>
+                    주·부 라인이 전 팀 마감 — 이 매물에 한해 빈 라인 아무 곳이나 지정할 수 있습니다 (룰북 4-3)
+                  </div>
+                )}
+                {squeezedLines.length > 0 && (
+                  <div style={{ marginTop: '8px', fontSize: '0.8rem', color: 'var(--danger)', textAlign: 'center' }}>
+                    ⚠ {squeezedLines.map((l) => POSITION_LABELS[l]).join('·')} 매물 소진 — 남은 자리는 다른 라인 선수로 채워야 합니다
+                  </div>
+                )}
               </div>
 
               <div style={{ marginTop: '12px', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>

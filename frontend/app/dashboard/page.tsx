@@ -170,6 +170,45 @@ function DashboardContent() {
               </div>
             ))}
           </div>
+
+          {/* 5개 라인 최종가. 주/부 라인이 마감되면 다른 라인으로 갈 수 있어서 전부 띄운다. */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '8px', maxWidth: '560px', margin: '20px auto 0' }}>
+            {LINES.map((line) => {
+              const price = activeRound.linePrices?.[line]
+                ?? Math.max(0, (activeRound.player.lineScores?.[line] ?? 0) + activeRound.currentPremium);
+              const isMain = line === activeRound.player.mainPosition;
+              const isSub = line === activeRound.player.subPosition;
+              const openTeams = teams.filter(t => (t.openLines ?? []).includes(line));
+              const supply = players.filter(p =>
+                !p.isCaptain
+                && (p.status === 'AVAILABLE' || p.status === 'UNSOLD')
+                && (p.mainPosition === line || p.subPosition === line)
+              ).length;
+              const squeezed = openTeams.length > 0 && supply === 0;
+              const accent = isMain ? 'var(--gold)' : isSub ? 'var(--accent-light)' : 'var(--text-secondary)';
+
+              return (
+                <div key={line} style={{
+                  border: `1px solid ${squeezed ? 'var(--danger)' : isMain || isSub ? accent : 'var(--border)'}`,
+                  background: squeezed ? 'rgba(239,68,68,0.12)' : 'transparent',
+                  borderRadius: '8px',
+                  padding: '8px 4px',
+                  opacity: openTeams.length > 0 ? 1 : 0.35,
+                }}>
+                  <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                    {POSITION_LABELS[line]}
+                    {isMain && <span style={{ color: 'var(--gold)', marginLeft: '3px', fontWeight: 800 }}>주</span>}
+                    {isSub && <span style={{ color: 'var(--accent-light)', marginLeft: '3px', fontWeight: 800 }}>부</span>}
+                  </div>
+                  <div style={{ fontSize: '1.2rem', fontWeight: 800, color: accent }}>{price}P</div>
+                  <div style={{ fontSize: '0.62rem', color: squeezed ? 'var(--danger)' : 'var(--text-muted)' }}>
+                    {openTeams.length > 0 ? `빈 팀 ${openTeams.length} · 매물 ${supply}` : '마감'}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
           {activeRound.status === 'PENDING_ASSIGN' ? (
             <p style={{ color: 'var(--gold)', marginTop: '12px', fontSize: '1.1rem' }}>
               🏆 <strong>{activeRound.winningTeamName}</strong> 낙찰 — 라인 선언 대기 중
